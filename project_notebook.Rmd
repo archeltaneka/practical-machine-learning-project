@@ -1,0 +1,87 @@
+---
+title: "R Notebook"
+author: "Archel Taneka"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Practical Machine Learning Project
+This project is for "Practical Machine Learning" course in John Hopkins Data Science Specialization Course at Coursera.
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+## Data
+The training data for this project are available here: 
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The test data are available here:
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-validation.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-validation.csv)
+
+The data for this project come from this source: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har). If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment. 
+
+## Setting Up
+If we read the course project instructions, <b>"The goal of your project is to predict the manner in which they did the exercise."</b> Thus, experimenting with different simple machine learning models is feasible with the `caret` library. We will also load both training and the "real" test data.
+```{r}
+library(caret)
+
+train <- read.csv('./pml-training.csv')
+real_test <- read.csv('./pml-testing.csv')
+set.seed(101) # for reproducibility purposes
+```
+Let's have a look at our dataset. We have 19622 rows with 160 columns (a.k.a features) on the training set while the test set has 20 rows with the same number of columns. This test set will be also used to answer the final quiz on week 4. As for the number of classes, we have 5 unique classes labelled from 'A' to 'E'.
+```{r}
+print(dim(train))
+print(dim(real_test))
+print(unique(train$classe))
+```
+## Cleaning & Split dataset
+the training set pretty much has null values here and there and several number of zero variances. We should filter them out to obtain a "clean" dataset as they did not .
+```{r}
+train <- train[, -c(1:7)]
+train <- train[,colMeans(is.na(train)) < .9]
+
+nvz <- nearZeroVar(train)
+train <- train[,-nvz]
+```
+
+After cleaning the dataset, we can proceed to split our training set into "training" and "validation"/"testing" set. Here I use "validation" to avoid confusion with the real test set. The split value is 0.8, meaning that there are 15968 data in the training set and 3924 data in the test set. Personally, I like splitting up bigger value on the training set to see if it's overfitting, then I can lower the split later if the model is indeed overfitting.
+```{r}
+train_idx <- createDataPartition(train$classe, p=0.8)[[1]]
+training <- train[train_idx,]
+validation <- train[-train_idx,]
+```
+
+The choice of the models here are pretty much straightforward. Since our task is a multiclass classification task, we cannot fit a linear/logistic regression model. All of these models are pretty much based on the decision tree and its variations such as random forest and gradient boosted.
+```{r, message=FALSE}
+dt_model <- train(classe~., data=training, method='rpart')
+rf_model <- train(classe~., data=training, method='rf')
+gbm_model <- train(classe~., data=training, method='gbm', verbose=FALSE)
+```
+
+After fitting the models, we can see their performances on the validation set.
+```{r}
+dt_preds <- predict(dt_model, validation)
+rf_preds <- predict(rf_model, validation)
+gbm_preds <- predict(gbm_model, validation)
+
+dt_confusionmat <- confusionMatrix(dt_preds, factor(validation$classe))
+gbm_confusionmat <- confusionMatrix(gbm_preds, factor(validation$classe))
+rf_confusionmat <- confusionMatrix(rf_preds, factor(validation$classe))
+acc <- c(dt_confusionmat$overall[1], gbm_confusionmat$overall[1], rf_confusionmat$overall[1])
+model_names <- c('Decision Tree', 'Gradient Boosted Model', 'Random Forest')
+error <- 1 - acc
+print('Accuracy on the validation set for each model:')
+print(data.frame(accuracy=acc, row.names=model_names))
+print('Error on the validation set for each model:')
+print(data.frame(error=error, row.names=model_names))
+```
+
+It seems like Random Forest achieves the highest accuracy (~99%) with lowest out of sample error (OOS). Now we can predict the real test dataset with the final chosen model.
+```{r}
+real_preds <- predict(rf_model, real_test)
+real_preds
+```
